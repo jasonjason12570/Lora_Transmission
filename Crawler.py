@@ -30,12 +30,18 @@ conn = connectDb('lora_server')
 if conn is not None:
     cur = conn.cursor()    
 def insertDB(checkType,time,temp,humidity,gps):
+    
     sql = "INSERT INTO result (type, time, temperature, humidity, gps) VALUES (%s, %s, %s, %s, %s)"
     val = (checkType, time,temp ,humidity, gps)
-    cur.execute(sql, val)
-    conn.commit()
-    print(cur.rowcount, "record inserted.")
     print(sql, val)
+    try:
+        cur.execute(sql, val)
+        conn.commit()
+        print(cur.rowcount, "record inserted.")
+        return True
+    except:
+        print("Insert DB Error")
+        return False
 
 def selectDB():
     sql = 'select * from result'
@@ -147,7 +153,13 @@ def on_message(client, userdata, msg):
     global msg_ack
     global msg_ack_flag
     global msg_ack_validate
+    
     global status
+    global checkType
+    global time
+    global temp
+    global humidity
+    global gps
 	# print(msg.topic+" "+msg.payload.decode('utf-8'))   # 轉換編碼
     #utf-8才看得懂中文
     #print(msg.topic+" "+str(msg.payload))
@@ -169,7 +181,6 @@ def on_message(client, userdata, msg):
             if(receive_data==""):
                 print("===No data no rx===")
             else:
-                
                 print("狀態 : "+str(status))
                 # 取得我們對應之卡號，印出基本訊息
                 print(msg.topic)
@@ -178,13 +189,7 @@ def on_message(client, userdata, msg):
                 print("receive_data = "+receive_data)
                 print("gwid="+gwid+",macAddr="+macAddr+",receive_data="+receive_data)
                 print(d)
-                
-                
-                
                 print("===start rx===")	  
-
-                  
-                
                 if(status==0):
                     try:
                         msg_syn = receive_data
@@ -195,7 +200,6 @@ def on_message(client, userdata, msg):
                     except:
                         print("Error in status 0 sending rx")
                 elif(status==1):
-                    
                     if(msg_syn == receive_data):
                         try:
                             msg_syn = receive_data
@@ -213,10 +217,16 @@ def on_message(client, userdata, msg):
                     else:
                         print("Error in status 1 recieving correct rx")
                         print("RX = "+str(receive_data))
-
-                        
                 elif(status==2):
-                    print("Insert into DB")
+                    checkType=""
+                    time=""
+                    temp=""
+                    humidity=""
+                    gps=""
+                    if(insertDB(checkType,time,temp,humidity,gps)):
+                        print("Insert into DB")
+                    else:
+                        print("Error to insert into DB")
             print("===End rx===")	
             print("===============================================================")
 msg_syn = ""
@@ -224,6 +234,12 @@ msg_ack_syn = ""
 msg_ack = "1a2b"
 msg_ack_flag = "1a"
 msg_ack_validate = ""
+
+checkType=""
+time=""
+temp=""
+humidity=""
+gps=""
 # 連線設定
 client = mqtt.Client()            # 初始化地端程式 
 client.on_connect = on_connect    # 設定連線的動作
