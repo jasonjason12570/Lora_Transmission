@@ -153,7 +153,7 @@ def on_message(client, userdata, msg):
     global msg_ack
     global msg_ack_flag
     global msg_ack_validate
-    
+
     global status
     global checkType
     global time
@@ -206,6 +206,18 @@ def on_message(client, userdata, msg):
                             msg_ack_syn = msg_ack+msg_syn
                             RX_sender(gwid,macAddr,msg_ack_syn)
                             print("仍收到SYN，再次送出ACK+SYN")
+                            #06 a1 2600 8625 1640526506 0241097760 1203539975
+                            original_data = caesar_decryption(msg_syn,8)
+                            checkType=original_data[2:4]
+                            temp=original_data[4:8]
+                            humidity=original_data[8:12]
+                            time=original_data[12:22]
+                            gps=original_data[22:42]
+                            print("checkType = "+checkType)
+                            print("temp = "+temp)
+                            print("humidity = "+humidity)
+                            print("time = "+time)
+                            print("gps = "+gps)
                             status = 1
                         except:
                             print("Error in status 1 sending rx")
@@ -213,20 +225,30 @@ def on_message(client, userdata, msg):
                         RX_sender(gwid,macAddr,msg_ack)
                         print("收到ACK，等待上傳")
                         status = 2
+                        if(status==2):
+                            #06 a1 2600 8625 1640526506 0241097760 1203539975
+                            original_data = caesar_decryption(msg_syn,8)
+                            checkType=original_data[2:4]
+                            temp=original_data[4:8]
+                            humidity=original_data[8:12]
+                            time=original_data[12:22]
+                            gps=original_data[22:42]
+                            print("checkType = "+checkType)
+                            print("temp = "+temp)
+                            print("humidity = "+humidity)
+                            print("time = "+time)
+                            print("gps = "+gps)
 
-                    else:
-                        print("Error in status 1 recieving correct rx")
-                        print("RX = "+str(receive_data))
-                elif(status==2):
-                    checkType=""
-                    time=""
-                    temp=""
-                    humidity=""
-                    gps=""
-                    if(insertDB(checkType,time,temp,humidity,gps)):
-                        print("Insert into DB")
-                    else:
-                        print("Error to insert into DB")
+                            if(insertDB(checkType,time,temp,humidity,gps)):
+                                print("Insert into DB")
+                                status = 0
+                            else:
+                                print("Error to insert into DB")
+
+                        else:
+                            print("Error in status 1 recieving correct rx")
+                            print("RX = "+str(receive_data))
+
             print("===End rx===")	
             print("===============================================================")
 msg_syn = ""
