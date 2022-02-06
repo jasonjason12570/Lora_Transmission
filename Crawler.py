@@ -30,12 +30,18 @@ conn = connectDb('lora_server')
 if conn is not None:
     cur = conn.cursor()    
 def insertDB(checkType,time,temp,humidity,gps):
+    
     sql = "INSERT INTO result (type, time, temperature, humidity, gps) VALUES (%s, %s, %s, %s, %s)"
     val = (checkType, time,temp ,humidity, gps)
-    cur.execute(sql, val)
-    conn.commit()
-    print(cur.rowcount, "record inserted.")
     print(sql, val)
+    try:
+        cur.execute(sql, val)
+        conn.commit()
+        print(cur.rowcount, "record inserted.")
+        return True
+    except:
+        print("Insert DB Error")
+        return False
 
 def selectDB():
     sql = 'select * from result'
@@ -142,9 +148,18 @@ def on_connect(client, userdata, flags, rc):
 
 # 當接收到從伺服器發送的訊息時要進行的動作
 def on_message(client, userdata, msg):
+    global msg_syn
+    global msg_ack_syn
+    global msg_ack
+    global msg_ack_flag
+    global msg_ack_validate
+
     global status
-    global ACK_SYN_data
-    global ACK
+    global checkType
+    global time
+    global temp
+    global humidity
+    global gps
 	# print(msg.topic+" "+msg.payload.decode('utf-8'))   # 轉換編碼
     #utf-8才看得懂中文
     #print(msg.topic+" "+str(msg.payload))
@@ -162,10 +177,11 @@ def on_message(client, userdata, msg):
 
 
         if(macAddr =="0000000051000002" or macAddr =="0000000051000000" or macAddr =="0000000051000001" or macAddr =="0000000051000003"):
+            print("===============================================================")
             if(receive_data==""):
                 print("===No data no rx===")
             else:
-                print("===============================================================")
+                print("狀態 : "+str(status))
                 # 取得我們對應之卡號，印出基本訊息
                 print(msg.topic)
                 now = datetime.datetime.now()
@@ -173,49 +189,79 @@ def on_message(client, userdata, msg):
                 print("receive_data = "+receive_data)
                 print("gwid="+gwid+",macAddr="+macAddr+",receive_data="+receive_data)
                 print(d)
-                
-                
                 print("===start rx===")	  
-                payload = [{'macAddr':'0000000051000002','data':'22','gwid':'000080029c55a773','extra':{'port':2,'txpara':'2'}}]
-                print (json.dumps(payload))
-                ##要發布的主題和內容
-                client.publish( "GIOT-GW/DL/00001c497b431d31", json.dumps(payload))
-                print("===End rx===")	  
-                
                 if(status==0):
-                    ACK_SYN_data = three_way_status(receive_data)
-                    if(status==1):
-                        RX_sender(gwid,macAddr,ACK_SYN_data)
-                        print("status = 1，send RX")
-
-                    else:
-                        print("error in status = 0")
+                    try:
+                        msg_syn = receive_data
+                        msg_ack_syn = msg_ack+msg_syn
+                        RX_sender(gwid,macAddr,msg_ack_syn)
+                        print("收到SYN，送出SYN+ACK")
+                        status = 1
+                    except:
+                        print("Error in status 0 sending rx")
                 elif(status==1):
-                    if(three_way_status(receive_data)):
-                        if(status ==2):
-                            print("Insert into DB")
-                    else:
-                        ACK_SYN_data = receive_data
-                        print(RX_sender(gwid,macAddr,ACK_SYN_data))
-                        print("error in status = 1，resend RX")
-                        
-                        #rx_data = ACK+ACK+receive_data
-                        #print("===start rx===")	  
-                        #payload = [{'macAddr':'0000000051000002','data':'11','gwid':'00001c497bf88385','extra':{'port':2,'txpara':'2'}}]
-                        #print (json.dumps(payload))
-                        ###要發布的主題和內容
-                        #client.publish( "GIOT-GW/DL/00001c497b431d31", json.dumps(payload))
-                        #payload = [{'macAddr':'0000000051000002','data':'22','gwid':'000080029c55a773','extra':{'port':2,'txpara':'2'}}]
-                        #print (json.dumps(payload))
-                        
-                elif(status==2):
-                    print("Insert into DB")
+                    if(msg_syn == receive_data):
+                        try:
+                            msg_syn = receive_data
+                            msg_ack_syn = msg_ack+msg_syn
+                            RX_sender(gwid,macAddr,msg_ack_syn)
+                            print("仍收到SYN，再次送出ACK+SYN")
+                            #06 a1 2600 8625 1640526506 0241097760 1203539975
+                            original_data = caesar_decryption(msg_syn,8)
+                            checkType=original_data[2:4]
+                            temp=original_data[4:8]
+                            humidity=original_data[8:12]
+                            time=original_data[12:22]
+                            gps=original_data[22:42]
+                            print("checkType = "+checkType)
+                            print("temp = "+temp)
+                            print("humidity = "+humidity)
+                            print("time = "+time)
+                            print("gps = "+gps)
+                            status = 1
+                        except:
+                            print("Error in status 1 sending rx")
+                    elif(msg_ack == receive_data):
+                        RX_sender(gwid,macAddr,msg_ack)
+                        print("收到ACK，等待上傳")
+                        status = 2
+                        if(status==2):
+                            #06 a1 2600 8625 1640526506 0241097760 1203539975
+                            original_data = caesar_decryption(msg_syn,8)
+                            checkType=original_data[2:4]
+                            temp=original_data[4:8]
+                            humidity=original_data[8:12]
+                            time=original_data[12:22]
+                            gps=original_data[22:42]
+                            print("checkType = "+checkType)
+                            print("temp = "+temp)
+                            print("humidity = "+humidity)
+                            print("time = "+time)
+                            print("gps = "+gps)
 
+                            if(insertDB(checkType,time,temp,humidity,gps)):
+                                print("Insert into DB")
+                                status = 0
+                            else:
+                                print("Error to insert into DB")
 
-            #client.publish( "GIOT-GW/DL/000080029c55a773", json.dumps(payload))
-            #client.publish( "GIOT-GW/DL/00001c497b431d31", json.dumps(payload))
-            # time.sleep(10)
+                        else:
+                            print("Error in status 1 recieving correct rx")
+                            print("RX = "+str(receive_data))
 
+            print("===End rx===")	
+            print("===============================================================")
+msg_syn = ""
+msg_ack_syn = ""
+msg_ack = "1a2b"
+msg_ack_flag = "1a"
+msg_ack_validate = ""
+
+checkType=""
+time=""
+temp=""
+humidity=""
+gps=""
 # 連線設定
 client = mqtt.Client()            # 初始化地端程式 
 client.on_connect = on_connect    # 設定連線的動作
