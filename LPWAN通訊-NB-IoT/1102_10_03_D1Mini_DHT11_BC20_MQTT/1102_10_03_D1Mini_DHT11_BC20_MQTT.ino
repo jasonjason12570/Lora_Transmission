@@ -1,6 +1,5 @@
 #include <Arduino.h>
 #include "BC20.h"
-#include "MySQL.h"
 //Extension
 #include <ESP8266WiFi.h>
 #include <ESP8266HTTPClient.h>
