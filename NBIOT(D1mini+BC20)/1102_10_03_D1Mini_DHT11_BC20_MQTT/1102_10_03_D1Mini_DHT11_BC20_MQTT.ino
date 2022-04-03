@@ -7,6 +7,13 @@
 #include <ESP8266HTTPClient.h>
 #include <MySQL_Connection.h>
 #include <MySQL_Cursor.h>
+
+// Json
+#include <ArduinoJson.h>
+StaticJsonDocument<400> json_doc;
+DeserializationError json_error;
+char json_output[1000];
+
 // D1 mini
 int pinDHT11 = 16; // D0=16
 SimpleDHT11 dht11(pinDHT11);
@@ -29,13 +36,14 @@ char mysqluser[] = "localuser"; // Your MySQL user login username(default is roo
 char mysqlpass[] = "qweasdzxc"; // Your MYSQL password
 char mysqlddb[] = "lora_local";
 //
+
 String MSG = "";
 bool qurysearch_ok = false;
 bool quryinsert_ok = false;
 int nRow = 10;
 int nCol = 3;
 String quryArray[10][3];
-String ACK = "2244";
+String ACK = "NBIOTACK";
 
 int status = 0;
 WiFiClient client;
@@ -153,6 +161,12 @@ void setup()
   // BC20+MQTT
   delay(5 * 1000);
   int sta_pre = sta;
+  // Get SIMID & IMEI
+  CleanBuffer();
+  SIMID = BC20_CIMI();
+  Serial.println("SIMID = " + String(SIMID));
+  IMEI = BC20_CGSN();
+  Serial.println("IMEI = " + String(IMEI));
 
   build_MQTT_connect(server_IP, server_port);
   delay(5 * 1000);
@@ -204,7 +218,8 @@ void setup()
 
 void loop()
 {
-
+  CleanBuffer();
+  delay(5000);
   Serial.println("=====================================");
   Serial.println("Initial");
 
@@ -224,20 +239,13 @@ void loop()
   Serial.print(humidity);
   Serial.println(" %");
 
-  SIMID = BC20_CIMI();
-  Serial.println("SIMID = "+String(SIMID));
-  IMEI = BC20_CGSN();
-  Serial.println("IMEI = "+String(IMEI));
-
-  
   MQTTtopic = "Forensics/Sensor";
 
-  Serial.println(WiFi.localIP());
+  // Publish_MQTT(MQTTtopic, "test");
 
-  /*
   if (qurysearch())
   {
-    Serial.println("已完成Data擷取, 進入status 1");
+    Serial.println("已完成Data擷取");
 
     // 1(送出SYN,尚未收到新的ACK+SYN)
     status = 1;
@@ -256,34 +264,90 @@ void loop()
     String msg_syn = "";
     String msg_ack_syn = "";
     String msg_ack = "";
-    String msg_ack_flag = "1a";
     String msg_ack_validate = "";
     String msg_syn_validate = "";
-    int ack_start = 0;
-    int ack_end = 0;
-    int len_response = 0;
+
     //=================================
     bool status_1 = true;
     bool status_2 = true;
     bool status_3 = true;
+    String getack = "";
+    const char *payload_ack;
+
     while (status_1)
     {
+      Serial.println("------------進入Status 1---------------");
       // Send SYN
-      msg_syn = "[{ \"IMEI\":\"test123456789\" ,";
+      msg_syn = "[{ \"IMEI\":\"" + IMEI + "\" ,";
       msg_syn = msg_syn + "\"data\":\"" + String(MSG) + "\"," + "\"temperature\":\"" + String(temperature) + "\"," + "\"humidity\":\"" + String(humidity) + "\"}]";
 
+      json_doc["IMEI"] = IMEI;
+      json_doc["data"] = MSG;
+      json_doc["temperature"] = temperature;
+      json_doc["humidity"] = humidity;
+      json_doc["ACK"] = "";
+      serializeJson(json_doc, json_output);
+      msg_syn = "[" + String(json_output) + "]";
+      Serial.println(msg_syn);
       Publish_MQTT(MQTTtopic, msg_syn);
-      Serial.println("BC20 sending...");
-      Serial.println("msg_syn: " + msg_syn);
-      delay(100 * 1000);
+      delay(10 * 1000);
+      // GET SYN+ACK
+      getack = GetSync();
+      if (getack != "")
+      {
+        Serial.println("====== Get Data Complete ======");
+        delay(3 * 1000);
+
+        // json 結構回控
+        // json_error = deserializeJson(json_doc, getack);
+        // if (!json_error)
+        //{
+        //   payload_ack = (json_doc["ACK"]);
+        // }
+
+        //純粹data前五字+ack (因為目前MQTT回控只能擷取33字元)
+        msg_ack = String(getack);
+
+        data_len = msg_ack.length() - 1;
+        msg_syn_validate = msg_ack.substring(0, 5);
+        msg_ack = msg_ack.substring(5, data_len);
+        if (msg_syn_validate == MSG.substring(0, 5))
+        {
+          Serial.println("Premission Complete");
+          Serial.println("ACK = " + msg_ack);
+          status_1 = false;
+        }
+        else
+        {
+          Serial.println("# SYN Invalid");
+          Serial.println("...");
+        }
+      }
+      else
+      {
+        Serial.println("====== Get Data null ======");
+      }
+
+      Serial.println("------------END Status 1---------------");
+    }
+    while (status_2)
+    {
+      Serial.println("------------進入Status 2---------------");
+      json_doc["IMEI"] = IMEI;
+      json_doc["data"] = MSG;
+      json_doc["temperature"] = temperature;
+      json_doc["humidity"] = humidity;
+      json_doc["ACK"] = msg_ack;
+      serializeJson(json_doc, json_output);
+      msg_ack_syn = "[" + String(json_output) + "]";
+      Serial.println(msg_ack_syn);
+      Publish_MQTT(MQTTtopic, msg_ack_syn);
+      delay(10 * 1000);
+
+      status_2 = false;
+      Serial.println("------------END Status 2---------------");
     }
   }
-  else
-  {
-    Serial.println("Failed");
-  }
 
-
-  */
-  delay(1000 * 1000);
+  delay(30 * 1000);
 }

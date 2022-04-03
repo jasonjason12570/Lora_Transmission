@@ -14,6 +14,7 @@ int reset_count = 0;         // 系統重新啟動計時器宣告
 String data_tempt = "";
 String SIMID = "";
 String IMEI = "";
+int data_len = 0;
 
 String server_IP = "140.128.99.71";
 String server_port = "1883";
@@ -24,12 +25,104 @@ String noreply = "no reply, reset all";
 String MQTTtopic;
 String MQTTmessage;
 
+String MQTTGetScript = "AT+QMTSUB=0,1,\"Forensics/PC\",0";
+String MQTTGetmessage = "";
+String GetSync()
+{
+  Serial.println("=======GetTopic=========");
+  bool get_msg = true;
+  data = "";
+
+  mySerial.println(MQTTGetScript);
+  int check = 1;
+  int wait = 0;
+  while (get_msg)
+  {
+    delay(1000);
+    if (wait < 120)
+    {
+      while (mySerial.available())
+      {                                                // Check if there is an available byte to read,
+        delay(10);                                     // Delay added to make thing stable
+        char c = mySerial.read();                      // Conduct a serial read
+        if (data == "+QMTRECV: 0,0,\"Forensics/PC\",") // Check Flag
+        {
+          // Serial.println("+QMTRECV: 0,0,\"Forensics/Sensor\",");
+          check = 2;
+          data = "";
+        }
+        if (c == '\n')
+        {
+          if (check == 2)
+          {
+            // Serial.println("1 Get DATA = " + data);
+            delay(1000);
+            data_len = data.length();
+            // Serial.println("3 Get data_len = ");
+            Serial.println(data.length());
+            data_len = data_len - 2;
+
+            data = data.substring(1, data_len);
+            Serial.println("Get DATA = " + data);
+            delay(1000);
+
+            get_msg = false;
+            MQTTGetmessage = data;
+            return MQTTGetmessage;
+            Serial.println("=======GetTopic=========");
+            break;
+          }
+          else
+          {
+            // Serial.println("data = " + data);
+            if (data == "ERROR")
+            {
+              Serial.println("data = ERROR");
+              get_msg = false;
+              resetFunc();
+            }
+            else
+            {
+              // Serial.println("data != ERROR");
+            }
+            data = "";
+          }
+        }
+        else
+        {
+          data += c;
+        }
+      }
+      wait++;
+    }
+    else
+    {
+      Serial.println("Out of limit time Fetching ");
+      get_msg = false;
+      Serial.println("=======GetTopic=========");
+    }
+  }
+}
+
+void CleanBuffer()
+{
+  while (mySerial.available())
+  {                           // Check if there is an available byte to read,
+    delay(10);                // Delay added to make thing stable
+    char c = mySerial.read(); // Conduct a serial read
+    data += c;
+  }
+  // Serial.println("CleanBuffer = " + data);
+  data = "";
+}
+
 String BC20_CIMI()
 { // Get Sim 卡號
-  Serial.println("BC20_CIMI: AT+CIMI");
+  // Serial.println("BC20_CIMI: AT+CIMI");
   mySerial.println("AT+CIMI");
   sta = 5;
   int check = 1;
+  String tmp_data = "";
   while (sta == 5)
   { // 等待模組訊息回覆
     while (mySerial.available())
@@ -37,20 +130,30 @@ String BC20_CIMI()
       delay(10);                // Delay added to make thing stable
       char c = mySerial.read(); // Conduct a serial read
 
-      if (data == "AT+CIMI" && check == 1)
+      if (data == "AT+CIMI") // Check Flag
       {
-        data = "";
+        // Serial.println("Get AT+CIMI");
         check = 2;
-        Serial.println("---check1---");
-      }
-      else if (c == '\n' && check == 2)
-      {
-        Serial.println("data = " + data);
-        Serial.println("---check2---");
-        break;
       }
 
-      data += c; // Shorthand for data = data + c
+      if (c == '\n')
+      {
+        if (check == 2)
+        {
+          check = 3;
+        }
+        else if (check == 3)
+        {
+          // Serial.println("Get SIMID = " + data);
+          break;
+        }
+        // Serial.println("data = " + data);
+        data = "";
+      }
+      else
+      {
+        data += c;
+      }
     }
     if (data.length() > 0)
     { // 判斷data內有值在更換
@@ -66,7 +169,7 @@ String BC20_CIMI()
     { // 超過10秒未有回覆，重新啟動系統
       count = 0;
       Serial.println(noreply);
-      // resetFunc();
+      resetFunc();
     }
   }
   count = 0;
@@ -76,7 +179,7 @@ String BC20_CIMI()
 
 String BC20_CGSN()
 { // Get IMEI 卡號
-  Serial.println("BC20_CGSN: AT+CGSN");
+  // Serial.println("BC20_CGSN: AT+CGSN");
   mySerial.println("AT+CGSN=1");
   sta = 6;
   data = "";
@@ -87,16 +190,26 @@ String BC20_CGSN()
     {                           // Check if there is an available byte to read,
       delay(10);                // Delay added to make thing stable
       char c = mySerial.read(); // Conduct a serial read
-      if (data == "+CGSN: " && check == 1)
+      if (data == "+CGSN: ")
       {
+        // Serial.println("Get +CGSN: ");
         data = "";
         check = 2;
       }
-      else if (c == '\n' && check == 2)
+
+      if (c == '\n')
       {
-        break;
+        if (check == 2)
+        {
+          // Serial.println("Get IMEI = " + data);
+          break;
+        }
+        data = "";
       }
-      data += c; // Shorthand for data = data + c
+      else
+      {
+        data += c;
+      }
     }
     if (data.length() > 0)
     { // 判斷data內有值在更換
@@ -115,7 +228,6 @@ String BC20_CGSN()
     }
   }
   count = 0;
-  data = "";
   delay(5 * 1000);
   return data;
 }
@@ -316,7 +428,8 @@ void Publish_MQTT(String topic, String message)
   data_tempt.concat(topic);
   data_tempt.concat(",");
   data_tempt.concat(message);
-  Serial.println(data_tempt);
+  // Serial.println(data_tempt);
+  delay(1000);
   mySerial.println(data_tempt);
   delay(1000);
   reading(sta_pre, sta);
