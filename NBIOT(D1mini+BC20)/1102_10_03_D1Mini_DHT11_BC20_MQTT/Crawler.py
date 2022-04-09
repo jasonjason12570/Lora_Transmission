@@ -41,12 +41,14 @@ conn = connectDb('lora_server')
 if conn is not None:
     cur = conn.cursor()    
 def insertDB(checkType,time,temp,humidity,gps):
-    sql = "INSERT INTO result (type, time, temperature, humidity, gps) VALUES (%s, %s, %s, %s, %s)"
-    val = (checkType, time,temp ,humidity, gps)
-    cur.execute(sql, val)
-    conn.commit()
-    print(cur.rowcount, "record inserted.")
-    print(sql, val)
+    if conn is not None:
+      cur = conn.cursor()
+      sql = "INSERT INTO result (type, time, temperature, humidity, gps) VALUES (%s, %s, %s, %s, %s)"
+      val = (checkType, time,temp ,humidity, gps)
+      cur.execute(sql, val)
+      conn.commit()
+      print(cur.rowcount, "record inserted.")
+      print(sql, val)
 
 def selectDB():
     sql = 'select * from result'
@@ -169,7 +171,9 @@ def on_message(client, userdata, msg):
     #print(msg.topic+" "+str(msg.payload))
     #print(msg.payload)
     #print(len(str(msg.payload)))
-    if(len(str(msg.payload))<6):
+    
+    if(len(str(msg.payload))<10):
+        print(str(msg.payload))
         print("initial")
     else:
         #json module
@@ -191,22 +195,32 @@ def on_message(client, userdata, msg):
 
             now = datetime.datetime.now()
             print ("Current date and time : "+now.strftime("%Y-%m-%d %H:%M:%S"))
-            print("IMEI="+IMEI+",data="+data+",temperature="+temp+",humidity="+humidity)
-            print("===start rx===")	  
-            if(msg_syn != data):
-                print("----Get New SYN----")
+            print("IMEI="+str(IMEI)+",data="+str(data)+",temperature="+str(temp)+",humidity="+str(humidity))
+            print("===start rx===")
+            if(msg_syn==""):
+                print("----Initial SYN----")
+                msg_syn = data
                 try:
                     msg_ack_syn = msg_syn[0:5]+msg_ack
-                    payload = ""
-                    print ("送出新SYN+ACK，msg_ack_syn = "+msg_ack_syn)
+                    print ("0,SYN+ACK，msg_ack_syn = "+msg_ack_syn)
+                    client.publish( "Forensics/PC", msg_ack_syn)
+                except:
+                    print("Error in status 0 sending rx")
+            elif(msg_syn != data):
+                print("----Get New SYN----")
+                msg_syn = data
+                try:
+                    msg_ack_syn = msg_syn[0:5]+msg_ack
+                    print ("3,送出新SYN+ACK，msg_ack_syn = "+msg_ack_syn)
                     client.publish( "Forensics/PC", msg_ack_syn)
                 except:
                     print("Error in status 0 sending rx")
             else:
                 print("----Get Old SYN，判斷是否有ACK----")
-
+                print("ack = "+str(ack))
+                print("msg_ack = "+str(msg_ack))
                 if(ack == msg_ack):
-                    print("已確認接收，開始上傳Data")
+                    print("2,已確認接收，開始上傳Data")
                     original_data = caesar_decryption(msg_syn,8)
                     checkType=original_data[2:4]
                     temp=original_data[4:8]
@@ -225,7 +239,7 @@ def on_message(client, userdata, msg):
                     else:
                         print("Error to insert into DB")
                 else:
-                    print("尚未接收，繼續送出SYN+ACK")
+                    print("1,尚未接收，繼續送出SYN+ACK")
                     try:
                         msg_ack_syn = data[0:5]+msg_ack
                         payload = ""

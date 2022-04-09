@@ -241,7 +241,11 @@ void loop()
 
   MQTTtopic = "Forensics/Sensor";
 
-  // Publish_MQTT(MQTTtopic, "test");
+  // String Initial = "[{/"IMEI/":/"/",/"data/":/"/",/"temperature/":0,/"humidity/":0,/"ACK/":/"/"}]";
+  if (status == 0)
+  {
+    Publish_MQTT(MQTTtopic, "test");
+  }
 
   if (qurysearch())
   {
@@ -308,7 +312,7 @@ void loop()
         //純粹data前五字+ack (因為目前MQTT回控只能擷取33字元)
         msg_ack = String(getack);
 
-        data_len = msg_ack.length() - 1;
+        data_len = msg_ack.length();
         msg_syn_validate = msg_ack.substring(0, 5);
         msg_ack = msg_ack.substring(5, data_len);
         if (msg_syn_validate == MSG.substring(0, 5))
@@ -345,9 +349,10 @@ void loop()
       delay(10 * 1000);
 
       status_2 = false;
+      quryupdate(quryArray[0][0]);
       Serial.println("------------END Status 2---------------");
     }
   }
 
-  delay(30 * 1000);
+  delay(60 * 1000);
 }
